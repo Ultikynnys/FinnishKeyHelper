@@ -27,3 +27,9 @@ SetWorkingDir %A_ScriptDir%
 
 ; Ctrl + Alt + Shift + ' -> Ö
 ^+!'::Send, Ö
+
+; Ctrl + Alt + l -> å
+^!l::Send, å
+
+; Ctrl + Alt + Shift + l -> Å
+^+!l::Send, Å

@@ -1,12 +1,12 @@
-# Finnish Key Helper (ä, ö Key Remapper)
+# Finnish Key Helper (ä, ö, å Key Remapper)
 
-**For Finnish users who prefer to program on a non-Finnish keyboard layout — but still need to type `ä` and `ö`.**
+**For Finnish users who prefer to program on a non-Finnish keyboard layout — but still need to type `ä`, `ö`, and `å`.**
 
-Many Finns switch to the US (or another international) keyboard layout for programming, because the brackets `[ ]`, braces `{ }`, backslash `\`, and other symbols programmers use constantly sit in far more convenient positions than on the Finnish/Swedish `fi` layout. The catch: switching layout makes the Finnish `ä` and `ö` keys disappear.
+Many Finns switch to the US (or another international) keyboard layout for programming, because the brackets `[ ]`, braces `{ }`, backslash `\`, and other symbols programmers use constantly sit in far more convenient positions than on the Finnish/Swedish `fi` layout. The catch: switching layout makes the Finnish `ä`, `ö`, and `å` keys disappear.
 
-This tool solves that problem. It leaves your non-Finnish layout completely intact and simply **adds the two missing Finnish letters back** as easy hotkeys — so you can keep coding on the layout you prefer and still write fluent Finnish without ever switching layouts.
+This tool solves that problem. It leaves your non-Finnish layout completely intact and simply **adds the missing Finnish letters back** as easy hotkeys — so you can keep coding on the layout you prefer and still write fluent Finnish without ever switching layouts.
 
-A lightweight background daemon for Windows that maps custom key combinations to the Finnish characters `ä` and `ö`.
+A lightweight background daemon for Windows that maps custom key combinations to the Finnish characters `ä`, `ö`, and `å`. Compatible with remote desktop and streaming tools like **Parsec**, **RDP**, and **Moonlight**.
 
 ---
 
@@ -14,12 +14,22 @@ A lightweight background daemon for Windows that maps custom key combinations to
 
 | Combination | Output | Description |
 |---|---|---|
-| `Ctrl + Alt + ;` | `ä` | Lowercase a with umlaut |
-| `Ctrl + Alt + Shift + ;` | `Ä` | Uppercase A with umlaut |
-| `Ctrl + Alt + '` | `ö` | Lowercase o with umlaut |
-| `Ctrl + Alt + Shift + '` | `Ö` | Uppercase O with umlaut |
+| `Ctrl + Alt + ;` | `ä` | Lowercase a with umlaut (default) |
+| `Ctrl + Alt + Shift + ;` | `Ä` | Uppercase A with umlaut (default) |
+| `Ctrl + Alt + '` | `ö` | Lowercase o with umlaut (default) |
+| `Ctrl + Alt + Shift + '` | `Ö` | Uppercase O with umlaut (default) |
+| `Ctrl + Alt + L` | `å` | Lowercase a with ring |
+| `Ctrl + Alt + Shift + L` | `Å` | Uppercase A with ring |
 
-*Note: On Windows, `AltGr` is processed as `Ctrl + Alt`, so `AltGr + ;` and `AltGr + '` also work identically.*
+*Note: On Windows, `AltGr` is processed as `Ctrl + Alt`, so `AltGr + ;`, `AltGr + '`, and `AltGr + L` also work identically.*
+*Tip: Right-click the system tray icon to swap `;` and `'` (`ö` at `;` and `ä` at `'`) if you prefer physical Finnish keyboard positions.*
+
+---
+
+## 🌐 Remote Desktop & Parsec Compatibility
+
+- Uses hardware **Alt+Numpad scan codes** for text injection, ensuring keystrokes stream cleanly through **Parsec** whether `FinnishKeyHelper` is running on the **client (source)** computer, the **host (target)** computer, or **both**.
+- Reliably releases modifier states so Chromium/Electron apps (VS Code, Discord, Slack) and text editors never mistake input for hotkey chords.
 
 ---
 
