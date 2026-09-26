@@ -23,8 +23,10 @@ namespace FinnishKeyHelper
         private const int VK_MENU = 0x12; // Alt
         private const int VK_OEM_1 = 0xBA; // ';' on US keyboards
         private const int VK_OEM_7 = 0xDE; // ''' on US keyboards
+        private const int VK_KEY_L = 0x4C; // 'l' for å
 
         private const uint INPUT_KEYBOARD = 1;
+        private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
         private const uint KEYEVENTF_KEYUP = 0x0002;
         private const uint KEYEVENTF_UNICODE = 0x0004;
         private const uint LLKHF_INJECTED = 0x0010;
@@ -39,9 +41,11 @@ namespace FinnishKeyHelper
 
         private static bool _suppressedSemicolon = false;
         private static bool _suppressedQuote = false;
+        private static bool _suppressedL = false;
         private static bool _ctrlDown = false;
         private static bool _altDown = false;
         private static bool _shiftDown = false;
+        private static bool _swapAumlOuml = false; // false: ;=ä,'=ö; true: ;=ö,'=ä (FinnishKeyMod)
 
         private static NotifyIcon _trayIcon;
 
@@ -149,6 +153,23 @@ namespace FinnishKeyHelper
                 ToolStripMenuItem info2 = new ToolStripMenuItem("Ctrl + Alt + '  -->  ö (Ö)");
                 info2.Enabled = false;
                 menu.Items.Add(info2);
+
+                ToolStripMenuItem info3 = new ToolStripMenuItem("Ctrl + Alt + L  -->  å (Å)");
+                info3.Enabled = false;
+                menu.Items.Add(info3);
+
+                menu.Items.Add(new ToolStripSeparator());
+
+                ToolStripMenuItem swapItem = new ToolStripMenuItem("Swap ; and ' (; = ö, ' = ä)");
+                swapItem.Checked = _swapAumlOuml;
+                swapItem.Click += (s, e) =>
+                {
+                    _swapAumlOuml = !_swapAumlOuml;
+                    swapItem.Checked = _swapAumlOuml;
+                    info1.Text = _swapAumlOuml ? "Ctrl + Alt + ;  -->  ö (Ö)" : "Ctrl + Alt + ;  -->  ä (Ä)";
+                    info2.Text = _swapAumlOuml ? "Ctrl + Alt + '  -->  ä (Ä)" : "Ctrl + Alt + '  -->  ö (Ö)";
+                };
+                menu.Items.Add(swapItem);
 
                 menu.Items.Add(new ToolStripSeparator());
 
@@ -286,13 +307,14 @@ namespace FinnishKeyHelper
                     _shiftDown = isKeyDown;
                 }
 
-                // Check for ';' or '''
+                // Check for ';', ''', or 'l'
                 // MapVirtualKey: 2 = MAPVK_VK_TO_CHAR
                 uint mappedChar = MapVirtualKey((uint)info.vkCode, 2) & 0xFFFF;
                 bool isSemicolon = (info.vkCode == VK_OEM_1 || info.scanCode == 0x27 || mappedChar == ';');
                 bool isQuote = (info.vkCode == VK_OEM_7 || info.scanCode == 0x28 || mappedChar == '\'');
+                bool isL = (info.vkCode == VK_KEY_L || mappedChar == 'l' || mappedChar == 'L');
 
-                if (isSemicolon || isQuote)
+                if (isSemicolon || isQuote || isL)
                 {
                     bool ctrl = _ctrlDown || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
                     bool alt = _altDown || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -304,8 +326,9 @@ namespace FinnishKeyHelper
                             _suppressedSemicolon = true;
                             bool shift = _shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                             bool capsLock = (GetKeyState(0x14) & 1) != 0; // VK_CAPITAL = 0x14
-                            char targetChar = (shift ^ capsLock) ? 'Ä' : 'ä';
-                            InjectUnicodeCharacter(targetChar, ctrl, alt, shift);
+                            bool upper = shift ^ capsLock;
+                            char targetChar = _swapAumlOuml ? (upper ? 'Ö' : 'ö') : (upper ? 'Ä' : 'ä');
+                            InjectCharacter(targetChar, ctrl, alt, shift);
                             return (IntPtr)1; // Swallow original keydown
                         }
                         else if (isKeyUp && _suppressedSemicolon)
@@ -321,13 +344,32 @@ namespace FinnishKeyHelper
                             _suppressedQuote = true;
                             bool shift = _shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                             bool capsLock = (GetKeyState(0x14) & 1) != 0; // VK_CAPITAL = 0x14
-                            char targetChar = (shift ^ capsLock) ? 'Ö' : 'ö';
-                            InjectUnicodeCharacter(targetChar, ctrl, alt, shift);
+                            bool upper = shift ^ capsLock;
+                            char targetChar = _swapAumlOuml ? (upper ? 'Ä' : 'ä') : (upper ? 'Ö' : 'ö');
+                            InjectCharacter(targetChar, ctrl, alt, shift);
                             return (IntPtr)1; // Swallow original keydown
                         }
                         else if (isKeyUp && _suppressedQuote)
                         {
                             _suppressedQuote = false;
+                            return (IntPtr)1; // Swallow original keyup
+                        }
+                    }
+                    else if (isL)
+                    {
+                        if (isKeyDown && ctrl && alt)
+                        {
+                            _suppressedL = true;
+                            bool shift = _shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                            bool capsLock = (GetKeyState(0x14) & 1) != 0; // VK_CAPITAL = 0x14
+                            bool upper = shift ^ capsLock;
+                            char targetChar = upper ? 'Å' : 'å';
+                            InjectCharacter(targetChar, ctrl, alt, shift);
+                            return (IntPtr)1; // Swallow original keydown
+                        }
+                        else if (isKeyUp && _suppressedL)
+                        {
+                            _suppressedL = false;
                             return (IntPtr)1; // Swallow original keyup
                         }
                     }
@@ -337,27 +379,65 @@ namespace FinnishKeyHelper
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
-        private static void InjectUnicodeCharacter(char c, bool releaseCtrl, bool releaseAlt, bool releaseShift)
+        private static void InjectCharacter(char c, bool releaseCtrl, bool releaseAlt, bool releaseShift)
         {
+            // Determine Alt+Numpad code for standard Finnish/Swedish characters.
+            // Using hardware Alt+Numpad scan codes ensures compatibility whether FinnishKeyHelper
+            // is running on the target computer, on the Parsec source computer (client), or on both!
+            string altCode = null;
+            switch (c)
+            {
+                case 'ä': altCode = "0228"; break;
+                case 'Ä': altCode = "0196"; break;
+                case 'ö': altCode = "0246"; break;
+                case 'Ö': altCode = "0214"; break;
+                case 'å': altCode = "0229"; break;
+                case 'Å': altCode = "0197"; break;
+            }
+
             List<INPUT> inputs = new List<INPUT>();
 
-            // 1. Temporarily release modifier keys so apps don't interpret this as Ctrl+Alt+char shortcut
+            // 1. Temporarily release Ctrl so Alt codes or Unicode inputs aren't interpreted as shortcuts
             if (releaseCtrl)
             {
+                inputs.Add(CreateKeyInput(0xA2, KEYEVENTF_KEYUP)); // VK_LCONTROL
+                inputs.Add(CreateKeyInput(0xA3, KEYEVENTF_KEYUP)); // VK_RCONTROL
                 inputs.Add(CreateKeyInput(VK_CONTROL, KEYEVENTF_KEYUP));
-            }
-            if (releaseAlt)
-            {
-                inputs.Add(CreateKeyInput(VK_MENU, KEYEVENTF_KEYUP));
             }
             if (releaseShift)
             {
+                inputs.Add(CreateKeyInput(0xA0, KEYEVENTF_KEYUP)); // VK_LSHIFT
+                inputs.Add(CreateKeyInput(0xA1, KEYEVENTF_KEYUP)); // VK_RSHIFT
                 inputs.Add(CreateKeyInput(VK_SHIFT, KEYEVENTF_KEYUP));
             }
 
-            // 2. Inject Unicode character (down and up)
-            inputs.Add(CreateUnicodeInput(c, false));
-            inputs.Add(CreateUnicodeInput(c, true));
+            if (!string.IsNullOrEmpty(altCode))
+            {
+                // Send Alt down (hardware scan code 0x38)
+                inputs.Add(CreateScanInput(0x38, 0));
+
+                foreach (char ch in altCode)
+                {
+                    ushort scan = GetNumpadScanCode(ch);
+                    inputs.Add(CreateScanInput(scan, 0));
+                    inputs.Add(CreateScanInput(scan, KEYEVENTF_KEYUP));
+                }
+
+                // Send Alt up (hardware scan code 0x38)
+                inputs.Add(CreateScanInput(0x38, KEYEVENTF_KEYUP));
+            }
+            else
+            {
+                // Fallback to Unicode input
+                if (releaseAlt)
+                {
+                    inputs.Add(CreateKeyInput(0xA4, KEYEVENTF_KEYUP)); // VK_LMENU
+                    inputs.Add(CreateKeyInput(0xA5, KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY)); // VK_RMENU
+                    inputs.Add(CreateKeyInput(VK_MENU, KEYEVENTF_KEYUP));
+                }
+                inputs.Add(CreateUnicodeInput(c, false));
+                inputs.Add(CreateUnicodeInput(c, true));
+            }
 
             // 3. Re-press modifiers if physically/remotely held so continued holding works
             if (releaseShift && (_shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0))
@@ -366,7 +446,8 @@ namespace FinnishKeyHelper
             }
             if (releaseAlt && (_altDown || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0))
             {
-                inputs.Add(CreateKeyInput(VK_MENU, 0));
+                bool isRMenu = (GetAsyncKeyState(0xA5) & 0x8000) != 0;
+                inputs.Add(CreateKeyInput(VK_MENU, isRMenu ? KEYEVENTF_EXTENDEDKEY : 0));
             }
             if (releaseCtrl && (_ctrlDown || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_CONTROL) & 0x8000) != 0))
             {
@@ -375,6 +456,36 @@ namespace FinnishKeyHelper
 
             INPUT[] array = inputs.ToArray();
             SendInput((uint)array.Length, array, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        private static INPUT CreateScanInput(ushort scanCode, uint flags)
+        {
+            INPUT input = new INPUT();
+            input.type = INPUT_KEYBOARD;
+            input.u.ki.wVk = 0;
+            input.u.ki.wScan = scanCode;
+            input.u.ki.dwFlags = flags | 0x0008; // KEYEVENTF_SCANCODE
+            input.u.ki.time = 0;
+            input.u.ki.dwExtraInfo = (UIntPtr)INJECTED_EXTRA_INFO;
+            return input;
+        }
+
+        private static ushort GetNumpadScanCode(char d)
+        {
+            switch (d)
+            {
+                case '0': return 0x52;
+                case '1': return 0x4F;
+                case '2': return 0x50;
+                case '3': return 0x51;
+                case '4': return 0x4B;
+                case '5': return 0x4C;
+                case '6': return 0x4D;
+                case '7': return 0x47;
+                case '8': return 0x48;
+                case '9': return 0x49;
+                default: return 0;
+            }
         }
 
         private static INPUT CreateKeyInput(ushort vk, uint flags)
