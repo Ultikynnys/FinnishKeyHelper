@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -319,6 +320,14 @@ namespace FinnishKeyHelper
                     bool ctrl = _ctrlDown || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
                     bool alt = _altDown || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0;
 
+                    // If the active foreground window is Parsec Client on the source/client computer,
+                    // do not intercept or swallow the hotkey. Pass it through untouched so Parsec streams
+                    // it to the remote target host!
+                    if (ctrl && alt && isKeyDown && IsParsecForeground())
+                    {
+                        return CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    }
+
                     if (isSemicolon)
                     {
                         if (isKeyDown && ctrl && alt)
@@ -512,6 +521,52 @@ namespace FinnishKeyHelper
             return input;
         }
 
+        private static bool IsParsecForeground()
+        {
+            try
+            {
+                IntPtr hWnd = GetForegroundWindow();
+                if (hWnd == IntPtr.Zero) return false;
+
+                StringBuilder title = new StringBuilder(256);
+                if (GetWindowText(hWnd, title, 256) > 0)
+                {
+                    string t = title.ToString();
+                    if (t.IndexOf("parsec", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                StringBuilder cls = new StringBuilder(256);
+                if (GetClassName(hWnd, cls, 256) > 0)
+                {
+                    string c = cls.ToString();
+                    if (c.IndexOf("parsec", StringComparison.OrdinalIgnoreCase) >= 0 || c == "MTY_Window")
+                    {
+                        return true;
+                    }
+                }
+
+                uint pid;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pid != 0)
+                {
+                    using (Process proc = Process.GetProcessById((int)pid))
+                    {
+                        if (proc.ProcessName.IndexOf("parsec", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
         #region Win32 API
 
         [StructLayout(LayoutKind.Sequential)]
@@ -580,6 +635,18 @@ namespace FinnishKeyHelper
 
         [DllImport("user32.dll")]
         private static extern short GetKeyState(int nVirtKey);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         [DllImport("user32.dll")]
         private static extern uint MapVirtualKey(uint uCode, uint uMapType);
