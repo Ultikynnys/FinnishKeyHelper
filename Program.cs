@@ -39,6 +39,9 @@ namespace FinnishKeyHelper
 
         private static bool _suppressedSemicolon = false;
         private static bool _suppressedQuote = false;
+        private static bool _ctrlDown = false;
+        private static bool _altDown = false;
+        private static bool _shiftDown = false;
 
         private static NotifyIcon _trayIcon;
 
@@ -257,8 +260,10 @@ namespace FinnishKeyHelper
             {
                 KBDLLHOOKSTRUCT info = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
 
-                // Ignore keys injected by SendInput or our own application
-                if ((info.flags & LLKHF_INJECTED) != 0 || (uint)info.dwExtraInfo == INJECTED_EXTRA_INFO)
+                // Ignore keys injected by our own application to prevent infinite recursion.
+                // Note: Do NOT check LLKHF_INJECTED here, because remote desktop tools like Parsec,
+                // RDP, and virtual input drivers inject user keyboard input via SendInput with LLKHF_INJECTED set.
+                if ((uint)info.dwExtraInfo == INJECTED_EXTRA_INFO)
                 {
                     return CallNextHookEx(_hookId, nCode, wParam, lParam);
                 }
@@ -266,6 +271,20 @@ namespace FinnishKeyHelper
                 int msg = wParam.ToInt32();
                 bool isKeyDown = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
                 bool isKeyUp = (msg == WM_KEYUP || msg == WM_SYSKEYUP);
+
+                // Track modifier key states directly from hook events to ensure reliability over Parsec/remote desktop
+                if (info.vkCode == VK_CONTROL || info.vkCode == 0xA2 || info.vkCode == 0xA3)
+                {
+                    _ctrlDown = isKeyDown;
+                }
+                else if (info.vkCode == VK_MENU || info.vkCode == 0xA4 || info.vkCode == 0xA5)
+                {
+                    _altDown = isKeyDown;
+                }
+                else if (info.vkCode == VK_SHIFT || info.vkCode == 0xA0 || info.vkCode == 0xA1)
+                {
+                    _shiftDown = isKeyDown;
+                }
 
                 // Check for ';' or '''
                 // MapVirtualKey: 2 = MAPVK_VK_TO_CHAR
@@ -275,16 +294,17 @@ namespace FinnishKeyHelper
 
                 if (isSemicolon || isQuote)
                 {
-                    bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                    bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+                    bool ctrl = _ctrlDown || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+                    bool alt = _altDown || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0;
 
                     if (isSemicolon)
                     {
                         if (isKeyDown && ctrl && alt)
                         {
                             _suppressedSemicolon = true;
-                            bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-                            char targetChar = shift ? 'Ä' : 'ä';
+                            bool shift = _shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                            bool capsLock = (GetKeyState(0x14) & 1) != 0; // VK_CAPITAL = 0x14
+                            char targetChar = (shift ^ capsLock) ? 'Ä' : 'ä';
                             InjectUnicodeCharacter(targetChar, ctrl, alt, shift);
                             return (IntPtr)1; // Swallow original keydown
                         }
@@ -299,8 +319,9 @@ namespace FinnishKeyHelper
                         if (isKeyDown && ctrl && alt)
                         {
                             _suppressedQuote = true;
-                            bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-                            char targetChar = shift ? 'Ö' : 'ö';
+                            bool shift = _shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                            bool capsLock = (GetKeyState(0x14) & 1) != 0; // VK_CAPITAL = 0x14
+                            char targetChar = (shift ^ capsLock) ? 'Ö' : 'ö';
                             InjectUnicodeCharacter(targetChar, ctrl, alt, shift);
                             return (IntPtr)1; // Swallow original keydown
                         }
@@ -338,16 +359,16 @@ namespace FinnishKeyHelper
             inputs.Add(CreateUnicodeInput(c, false));
             inputs.Add(CreateUnicodeInput(c, true));
 
-            // 3. Re-press modifiers if physically held so continued holding works
-            if (releaseShift && (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)
+            // 3. Re-press modifiers if physically/remotely held so continued holding works
+            if (releaseShift && (_shiftDown || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0))
             {
                 inputs.Add(CreateKeyInput(VK_SHIFT, 0));
             }
-            if (releaseAlt && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+            if (releaseAlt && (_altDown || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0))
             {
                 inputs.Add(CreateKeyInput(VK_MENU, 0));
             }
-            if (releaseCtrl && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
+            if (releaseCtrl && (_ctrlDown || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_CONTROL) & 0x8000) != 0))
             {
                 inputs.Add(CreateKeyInput(VK_CONTROL, 0));
             }
@@ -445,6 +466,9 @@ namespace FinnishKeyHelper
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll")]
+        private static extern short GetKeyState(int nVirtKey);
 
         [DllImport("user32.dll")]
         private static extern uint MapVirtualKey(uint uCode, uint uMapType);
